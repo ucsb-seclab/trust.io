@@ -1,0 +1,6 @@
+//arch = zynq; split = false; format = BIN
+the_ROM_image:
+{
+	[bootloader]/home/cspensky/projects/trust.io/software/fsbl/Debug/fsbl.elf
+	/home/cspensky/projects/trust.io/software/base_zynq_wrapper_hw_platform_0/base_zynq_wrapper.bit
+}

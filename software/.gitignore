@@ -1,0 +1,13 @@
+.*
+*.so
+*.o
+*.dll
+*.log
+*.bit
+*.html
+*.bin
+*.metadata
+!*.cproject
+!*.sdkproject
+!*.project
+!*.gitignore

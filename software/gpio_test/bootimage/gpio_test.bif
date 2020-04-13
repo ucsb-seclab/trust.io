@@ -1,0 +1,7 @@
+//arch = zynq; split = true; format = BIN
+the_ROM_image:
+{
+	[bootloader]/home/cspensky/projects/trust.io/zc702_3/zc702_3.sdk/fsbl/Debug/fsbl.elf
+	/home/cspensky/projects/trust.io/zc702_3/zc702_3.sdk/base_zynq_wrapper_hw_platform_0/base_zynq_wrapper.bit
+	/home/cspensky/projects/trust.io/zc702_3/zc702_3.sdk/gpio_test/Debug/gpio_test.elf
+}

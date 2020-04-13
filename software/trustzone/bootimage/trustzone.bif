@@ -1,0 +1,5 @@
+//arch = zynq; split = false; format = BIN
+the_ROM_image:
+{
+	/home/cspensky/projects/trust.io/zc702_3/zc702_3.sdk/trustzone/Debug/trustzone.elf
+}
