@@ -1,0 +1,337 @@
+[1mdiff --git a/core/arch/arm/kernel/thread.c b/core/arch/arm/kernel/thread.c[m
+[1mindex 43e5fb5..a3b6899 100644[m
+[1m--- a/core/arch/arm/kernel/thread.c[m
+[1m+++ b/core/arch/arm/kernel/thread.c[m
+[36m@@ -52,7 +52,7 @@[m
+ #include <tee/tee_fs_rpc.h>[m
+ #include <trace.h>[m
+ #include <util.h>[m
+[31m-[m
+[32m+[m[32m//#include <trustio_test.h>[m
+ #include "thread_private.h"[m
+ [m
+ #ifdef CFG_WITH_ARM_TRUSTED_FW[m
+[36m@@ -735,6 +735,7 @@[m [mint thread_state_suspend(uint32_t flags, uint32_t cpsr, vaddr_t pc)[m
+ [m
+ 	assert(ct != -1);[m
+ [m
+[32m+[m[32m    //perform_trustio_test();[m
+ 	thread_check_canaries();[m
+ [m
+ 	release_unused_kernel_stack(threads + ct, cpsr);[m
+[1mdiff --git a/core/arch/arm/plat-hikey/hikey_peripherals.h b/core/arch/arm/plat-hikey/hikey_peripherals.h[m
+[1mindex ee89715..bc3180c 100644[m
+[1m--- a/core/arch/arm/plat-hikey/hikey_peripherals.h[m
+[1m+++ b/core/arch/arm/plat-hikey/hikey_peripherals.h[m
+[36m@@ -40,6 +40,7 @@[m
+ #define PMX0_BASE	0xF7010000[m
+ #define PMX1_BASE	0xF7010800[m
+ #define GPIO6_BASE	0xF7022000[m
+[32m+[m[32m#define TRUSTIO_GPIO_BASE 0xF8013000[m
+ #define SPI_BASE	0xF7106000[m
+ [m
+ #define PMUSSI_REG_SIZE		0x1000[m
+[1mdiff --git a/core/arch/arm/plat-hikey/main.c b/core/arch/arm/plat-hikey/main.c[m
+[1mindex f287c53..04078c9 100644[m
+[1m--- a/core/arch/arm/plat-hikey/main.c[m
+[1m+++ b/core/arch/arm/plat-hikey/main.c[m
+[36m@@ -23,6 +23,7 @@[m
+ #include <stdint.h>[m
+ #include <tee/entry_std.h>[m
+ #include <tee/entry_fast.h>[m
+[32m+[m[32m#include <trustio_test.h>[m
+ [m
+ static void main_fiq(void);[m
+ [m
+[36m@@ -43,6 +44,7 @@[m [mstatic struct pl011_data console_data;[m
+ register_phys_mem(MEM_AREA_IO_NSEC, CONSOLE_UART_BASE, PL011_REG_SIZE);[m
+ #if defined(PLATFORM_FLAVOR_hikey)[m
+ register_phys_mem(MEM_AREA_IO_NSEC, PMUSSI_BASE, PMUSSI_REG_SIZE);[m
+[32m+[m[32mregister_phys_mem(MEM_AREA_IO_NSEC, TRUSTIO_GPIO_BASE, PL061_REG_SIZE);[m
+ #endif[m
+ #if defined(CFG_SPI) && defined(PLATFORM_FLAVOR_hikey)[m
+ register_phys_mem(MEM_AREA_IO_NSEC, PERI_BASE, PERI_BASE_REG_SIZE);[m
+[36m@@ -131,7 +133,6 @@[m [mvoid spi_init(void)[m
+ 	write32(PINCFG_NOPULL, pmx1_base + PMX1_IOCG105);[m
+ 	write32(PINCFG_NOPULL, pmx1_base + PMX1_IOCG106);[m
+ 	write32(PINCFG_NOPULL, pmx1_base + PMX1_IOCG107);[m
+[31m-[m
+ #ifdef CFG_SPI_TEST[m
+ 	spi_test();[m
+ #endif[m
+[1mdiff --git a/core/arch/arm/plat-hikey/sub.mk b/core/arch/arm/plat-hikey/sub.mk[m
+[1mindex 1acd560..5defbac 100644[m
+[1m--- a/core/arch/arm/plat-hikey/sub.mk[m
+[1m+++ b/core/arch/arm/plat-hikey/sub.mk[m
+[36m@@ -1,5 +1,5 @@[m
+ global-incdirs-y += .[m
+[31m-srcs-y += main.c[m
+[32m+[m[32msrcs-y += main.c trustio_test.c aes.c[m
+ ifeq ($(PLATFORM_FLAVOR),hikey)[m
+ srcs-$(CFG_SPI_TEST) += spi_test.c[m
+ endif[m
+[1mdiff --git a/core/arch/arm/tee/entry_std.c b/core/arch/arm/tee/entry_std.c[m
+[1mindex d256b27..d3add4d 100644[m
+[1m--- a/core/arch/arm/tee/entry_std.c[m
+[1m+++ b/core/arch/arm/tee/entry_std.c[m
+[36m@@ -46,6 +46,11 @@[m
+ #include <tee/tee_cryp_utl.h>[m
+ #include <tee/uuid.h>[m
+ #include <util.h>[m
+[32m+[m[32m#include <trustio_test.h>[m
+[32m+[m[32m#include <aes.h>[m
+[32m+[m[32m#include <kernel/thread.h>[m
+[32m+[m[32m#include <kernel/tee_time.h>[m
+[32m+[m[32m#include <optee_msg_supplicant.h>[m
+ [m
+ #define SHM_CACHE_ATTRS	\[m
+ 	(uint32_t)(core_mmu_is_shm_cached() ?  OPTEE_SMC_SHM_CACHED : 0)[m
+[36m@@ -59,6 +64,8 @@[m [mstatic struct mobj *shm_mobj;[m
+ static struct mobj **sdp_mem_mobjs;[m
+ #endif[m
+ [m
+[32m+[m[32mlong read_from_trustio_pin(void);[m
+[32m+[m
+ static bool param_mem_from_mobj(struct param_mem *mem, struct mobj *mobj,[m
+ 				const paddr_t pa, const size_t sz)[m
+ {[m
+[36m@@ -335,6 +342,193 @@[m [mout:[m
+ 	smc_args->a0 = OPTEE_SMC_RETURN_OK;[m
+ }[m
+ [m
+[32m+[m
+[32m+[m[32mstatic void trustio_handle_challenge_req(struct thread_smc_args __maybe_unused *smc_args, struct optee_msg_arg __maybe_unused *arg, uint32_t __maybe_unused num_params) {[m
+[32m+[m	[32m// get the target value[m[41m		       [m
+[32m+[m[32m    //long target_val = arg->params[0].u.value.a;[m
+[32m+[m[41m    [m
+[32m+[m[32m    //trust_io_hash = smc_args->a5;[m
+[32m+[m[32m    //uint32_t encVal = target_val;[m
+[32m+[m[32m    TEE_Result res;[m
+[32m+[m[32m    struct optee_msg_param params;[m
+[32m+[m[32m    struct mobj *mobj;[m
+[32m+[m[32m    uint64_t c = 0;[m
+[32m+[m[32m    char *va;[m
+[32m+[m[32m    struct AES_ctx ctx;[m
+[32m+[m[32m    uint32_t tarretval, tarVal = 0x453;[m
+[32m+[m[41m    [m
+[32m+[m[41m    [m
+[32m+[m[32m    uint8_t iv[]  = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f };[m
+[32m+[m[32m    uint8_t key[] = { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c };[m
+[32m+[m[41m    [m
+[32m+[m[41m    [m
+[32m+[m[32m    mobj = thread_rpc_alloc_payload(128, &c);[m
+[32m+[m[32m    //TEE_Time old_time, new_time;[m
+[32m+[m[32m    // Do the RPC.[m
+[32m+[m[32m    va = mobj_get_va(mobj, 0);[m
+[32m+[m[41m    [m
+[32m+[m[32m    //*(uint32_t*)(va + 12) = tarVal;[m
+[32m+[m[32m    memcpy(va + 12, &tarVal, sizeof(tarVal));[m
+[32m+[m[41m    [m
+[32m+[m[32m    //DMSG("TRUSTIO Read Before Encryption: 0x%x, 0x%x, 0x%x, 0x%x\n", (int)(*(va + 12)), (int)(*(va + 13)), (int)(*(va + 14)), (int)(*(va + 15)));[m
+[32m+[m[41m    [m
+[32m+[m[32m    AES_init_ctx_iv(&ctx, key, iv);[m
+[32m+[m[41m    [m
+[32m+[m[32m    AES_CBC_encrypt_buffer(&ctx, (uint8_t *)va, 16);[m
+[32m+[m[41m    [m
+[32m+[m[32m    //DMSG("TRUSTIO Read After Encryption: 0x%x, 0x%x, 0x%x, 0x%x\n", (int)(*(va + 12)), (int)(*(va + 13)), (int)(*(va + 14)), (int)(*(va + 15)));[m
+[32m+[m[41m    [m
+[32m+[m[32m    memset(&params, 0, sizeof(params));[m
+[32m+[m[32m    params.attr = OPTEE_MSG_ATTR_TYPE_VALUE_INOUT;[m
+[32m+[m[41m    [m
+[32m+[m[32m    msg_param_init_memparam(&params, mobj, 0, 128, c, MSG_PARAM_MEM_DIR_INOUT);[m
+[32m+[m[41m    [m
+[32m+[m[32m    res = thread_rpc_cmd(OPTEE_TRUSTIO_NETWORK_CALL, 1, &params);[m
+[32m+[m[32m    if(res != TEE_SUCCESS) {[m
+[32m+[m[32m        DMSG("TRUSTIO Read: RPC FAILED\n");[m
+[32m+[m[32m    }[m
+[32m+[m[41m    [m
+[32m+[m[32m    AES_init_ctx_iv(&ctx, key, iv);[m
+[32m+[m[41m    [m
+[32m+[m[32m    //DMSG("TRUSTIO Read Before Decryption: 0x%x, 0x%x, 0x%x, 0x%x\n", (int)(*(va + 12)), (int)(*(va + 13)), (int)(*(va + 14)), (int)(*(va + 15)));[m
+[32m+[m[32m    AES_CBC_decrypt_buffer(&ctx, (uint8_t *)va, 16);[m
+[32m+[m[41m    [m
+[32m+[m[32m    memcpy(&tarretval, va + 12, sizeof(tarretval));[m
+[32m+[m[41m    [m
+[32m+[m[32m    //DMSG("TRUSTIO Read After Decryption: 0x%x, 0x%x, 0x%x, 0x%x\n", (int)(*(va + 12)), (int)(*(va + 13)), (int)(*(va + 14)), (int)(*(va + 15)));[m
+[32m+[m[41m    [m
+[32m+[m[32m    if(tarretval == tarVal + 1) {[m
+[32m+[m[32m        smc_args->a3 = read_from_trustio_pin();[m
+[32m+[m[32m    } else {[m
+[32m+[m[32m        DMSG("TRUSTIO Read Bammed up, Expected:0x%x, Got:0x%x\n", tarVal + 1, tarretval);[m
+[32m+[m[32m    }[m
+[32m+[m[41m    [m
+[32m+[m[32m    thread_rpc_free_payload(c, mobj);[m
+[32m+[m[41m    [m
+[32m+[m[41m    [m
+[32m+[m[41m    [m
+[32m+[m[41m    [m
+[32m+[m[32m    // params[0].u.value.a = encVal ^ 0xdededede;[m
+[32m+[m[32m    //params[0].attr = OPTEE_MSG_ATTR_TYPE_VALUE_OUTPUT;[m
+[32m+[m[32m    //params[0].u.value.a = read_from_trustio_pin();[m
+[32m+[m[32m    //params[0].u.value.a ^= target_hash_val;[m
+[32m+[m[32m    //tee_time_get_sys_time(&old_time);[m
+[32m+[m[32m    //res = thread_rpc_cmd(OPTEE_TRUSTIO_NETWORK_CALL, 2, &params);[m
+[32m+[m[41m    [m
+[32m+[m[41m    [m
+[32m+[m[32m    //tee_time_get_sys_time(&new_time);[m
+[32m+[m[32m    //DMSG("TRUSTIO: SECURE SIDE TIME: seconds=%d, milliseconds=%d\n",new_time.seconds-old_time.seconds, new_time.millis-old_time.millis);[m
+[32m+[m[32m    /*if(res != TEE_SUCCESS) {[m
+[32m+[m[32m        //DMSG("TRUSTIO: RPC FAILED\n");[m
+[32m+[m[32m    } else {[m
+[32m+[m[32m        if(params[0].u.value.b == encVal) {[m
+[32m+[m[32m            //DMSG("TRUSTIO: GOT VALID RESPONSE FROM NETWORK\n");[m
+[32m+[m[32m            // Write to the device.[m
+[32m+[m[32m            write_to_trustio_pin(target_val);[m
+[32m+[m[32m        } else {[m
+[32m+[m[32m            DMSG("TRUSTIO: VALUE ERROR: Expected:0x%x, Got:0x%lx\n", encVal, params.u.value.b);[m
+[32m+[m[32m        }[m
+[32m+[m[32m    }*/[m
+[32m+[m[32m    //smc_args->a5 = target_hash_val;[m
+[32m+[m[41m    [m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mstatic void trustio_handle_gpio_on(struct thread_smc_args __maybe_unused *smc_args,[m
+[32m+[m			[32m       struct optee_msg_arg *arg, uint32_t __maybe_unused num_params) {[m
+[32m+[m	[32m// get the target value[m[41m		       [m
+[32m+[m[32m    long target_val = arg->params[0].u.value.a;[m
+[32m+[m[32m    //long target_hash_val;[m
+[32m+[m[32m    //uint32_t encVal = target_val;[m
+[32m+[m[32m    struct optee_msg_param params;[m
+[32m+[m[32m    //TEE_Time old_time, new_time;[m
+[32m+[m[32m    TEE_Result res;[m
+[32m+[m[41m    [m
+[32m+[m[32m    struct mobj *mobj;[m
+[32m+[m[32m    uint64_t c = 0;[m
+[32m+[m[32m    char *va;[m
+[32m+[m[32m    struct AES_ctx ctx;[m
+[32m+[m[32m    uint32_t tarretval, tarVal = 0x668;[m
+[32m+[m[41m    [m
+[32m+[m[41m    [m
+[32m+[m[32m    uint8_t iv[]  = { 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f };[m
+[32m+[m[32m    uint8_t key[] = { 0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c };[m
+[32m+[m[41m    [m
+[32m+[m[41m    [m
+[32m+[m[32m    mobj = thread_rpc_alloc_payload(128, &c);[m
+[32m+[m[32m    //TEE_Time old_time, new_time;[m
+[32m+[m[32m    // Do the RPC.[m
+[32m+[m[32m    va = mobj_get_va(mobj, 0);[m
+[32m+[m[41m    [m
+[32m+[m[32m    //*(uint32_t*)(va + 12) = tarVal;[m
+[32m+[m[32m    memcpy(va + 12, &tarVal, sizeof(tarVal));[m
+[32m+[m[41m    [m
+[32m+[m[32m    //DMSG("TRUSTIO Read Before Encryption: 0x%x, 0x%x, 0x%x, 0x%x\n", (int)(*(va + 12)), (int)(*(va + 13)), (int)(*(va + 14)), (int)(*(va + 15)));[m
+[32m+[m[41m    [m
+[32m+[m[32m    AES_init_ctx_iv(&ctx, key, iv);[m
+[32m+[m[41m    [m
+[32m+[m[32m    AES_CBC_encrypt_buffer(&ctx, (uint8_t *)va, 16);[m
+[32m+[m[41m    [m
+[32m+[m[32m    //DMSG("TRUSTIO Read After Encryption: 0x%x, 0x%x, 0x%x, 0x%x\n", (int)(*(va + 12)), (int)(*(va + 13)), (int)(*(va + 14)), (int)(*(va + 15)));[m
+[32m+[m[41m    [m
+[32m+[m[32m    memset(&params, 0, sizeof(params));[m
+[32m+[m[32m    params.attr = OPTEE_MSG_ATTR_TYPE_VALUE_INOUT;[m
+[32m+[m[41m    [m
+[32m+[m[32m    msg_param_init_memparam(&params, mobj, 0, 128, c, MSG_PARAM_MEM_DIR_INOUT);[m
+[32m+[m[41m    [m
+[32m+[m[32m    res = thread_rpc_cmd(OPTEE_TRUSTIO_NETWORK_CALL, 1, &params);[m
+[32m+[m[32m    if(res != TEE_SUCCESS) {[m
+[32m+[m[32m        DMSG("TRUSTIO Read: RPC FAILED\n");[m
+[32m+[m[32m    }[m
+[32m+[m[41m    [m
+[32m+[m[32m    AES_init_ctx_iv(&ctx, key, iv);[m
+[32m+[m[41m    [m
+[32m+[m[32m    //DMSG("TRUSTIO Read Before Decryption: 0x%x, 0x%x, 0x%x, 0x%x\n", (int)(*(va + 12)), (int)(*(va + 13)), (int)(*(va + 14)), (int)(*(va + 15)));[m
+[32m+[m[32m    AES_CBC_decrypt_buffer(&ctx, (uint8_t *)va, 16);[m
+[32m+[m[41m    [m
+[32m+[m[32m    memcpy(&tarretval, va + 12, sizeof(tarretval));[m
+[32m+[m[41m    [m
+[32m+[m[32m    if(tarretval == tarVal + 1) {[m
+[32m+[m[32m        write_to_trustio_pin(target_val);[m
+[32m+[m[32m    } else {[m
+[32m+[m[32m        DMSG("TRUSTIO Write Bammed up, Expected:0x%x, Got:0x%x\n", tarVal + 1, tarretval);[m
+[32m+[m[32m    }[m
+[32m+[m[41m    [m
+[32m+[m[32m    thread_rpc_free_payload(c, mobj);[m
+[32m+[m[41m    [m
+[32m+[m[41m    [m
+[32m+[m[41m    [m
+[32m+[m[32m    //params.attr = OPTEE_MSG_ATTR_TYPE_VALUE_INOUT;[m
+[32m+[m[41m    [m
+[32m+[m[32m    //res = thread_rpc_cmd(OPTEE_TRUSTIO_NETWORK_CALL, 1, &params);[m
+[32m+[m[32m    //target_hash_val = params[0].u.value.b;[m
+[32m+[m[32m    //target_hash_val ^= read_from_trustio_pin();[m
+[32m+[m[41m    [m
+[32m+[m[41m    [m
+[32m+[m[32m    //params.u.value.a = encVal ^ 0xdededede;[m
+[32m+[m[32m    //params[0].attr = OPTEE_MSG_ATTR_TYPE_VALUE_OUTPUT;[m
+[32m+[m[32m    //params[0].u.value.a = read_from_trustio_pin();[m
+[32m+[m[32m    //params[0].u.value.a ^= target_hash_val;[m
+[32m+[m[32m    //tee_time_get_sys_time(&old_time);[m
+[32m+[m[32m    //res = thread_rpc_cmd(OPTEE_TRUSTIO_NETWORK_CALL, 1, &params);[m
+[32m+[m[41m    [m
+[32m+[m[41m    [m
+[32m+[m[32m    //tee_time_get_sys_time(&new_time);[m
+[32m+[m[32m    //DMSG("TRUSTIO: SECURE SIDE TIME: seconds=%d, milliseconds=%d\n",new_time.seconds-old_time.seconds, new_time.millis-old_time.millis);[m
+[32m+[m[32m    /*if(res != TEE_SUCCESS) {[m
+[32m+[m[32m        DMSG("TRUSTIO: RPC FAILED\n");[m
+[32m+[m[32m    } else {[m
+[32m+[m[32m        if(params.u.value.b == encVal) {[m
+[32m+[m[32m            //DMSG("TRUSTIO: GOT VALID RESPONSE FROM NETWORK\n");[m
+[32m+[m[32m            // Write to the device.[m
+[32m+[m[32m            write_to_trustio_pin(target_val);[m
+[32m+[m[32m        } else {[m
+[32m+[m[32m            DMSG("TRUSTIO: VALUE ERROR: Expected:0x%x, Got:0x%lx\n", encVal, params.u.value.b);[m
+[32m+[m[32m        }[m
+[32m+[m[32m    }*/[m
+[32m+[m[41m    [m
+[32m+[m[32m}[m
+[32m+[m[41m			       [m
+[32m+[m
+ static void entry_close_session(struct thread_smc_args *smc_args,[m
+ 			struct optee_msg_arg *arg, uint32_t num_params)[m
+ {[m
+[36m@@ -572,7 +766,18 @@[m [mvoid __weak tee_entry_std(struct thread_smc_args *smc_args)[m
+ 	case OPTEE_MSG_CMD_UNREGISTER_SHM:[m
+ 		unregister_shm(smc_args, arg, num_params);[m
+ 		break;[m
+[31m-[m
+[32m+[m[32m    case OPTEE_MSG_CMD_TRUSTIO_GPIO:[m
+[32m+[m[32m        //TODO: handle trust IO GPIO[m
+[32m+[m[32m        // INIT trust.io[m
+[32m+[m[32m        init_trustio_gpio();[m
+[32m+[m[32m        // perform the trustio stuff[m
+[32m+[m[32m        trustio_handle_gpio_on(smc_args, arg, num_params);[m
+[32m+[m[32m        break;[m
+[32m+[m[32m    case OPTEE_MSG_CMD_TRUSTIO_GPIO_READ:[m
+[32m+[m[32m        init_trustio_gpio();[m
+[32m+[m[32m        // perform the trustio stuff[m
+[32m+[m[32m        trustio_handle_challenge_req(smc_args, arg, num_params);[m
+[32m+[m[32m        break;[m
+ 	default:[m
+ 		EMSG("Unknown cmd 0x%x\n", arg->cmd);[m
+ 		smc_args->a0 = OPTEE_SMC_RETURN_EBADCMD;[m
+[1mdiff --git a/core/include/optee_msg.h b/core/include/optee_msg.h[m
+[1mindex bf59f82..3f8375c 100644[m
+[1m--- a/core/include/optee_msg.h[m
+[1m+++ b/core/include/optee_msg.h[m
+[36m@@ -314,6 +314,8 @@[m [mstruct optee_msg_arg {[m
+ #define OPTEE_MSG_CMD_CANCEL		3[m
+ #define OPTEE_MSG_CMD_REGISTER_SHM	4[m
+ #define OPTEE_MSG_CMD_UNREGISTER_SHM	5[m
+[32m+[m[32m#define OPTEE_MSG_CMD_TRUSTIO_GPIO    6[m
+[32m+[m[32m#define OPTEE_MSG_CMD_TRUSTIO_GPIO_READ    7[m
+ #define OPTEE_MSG_FUNCID_CALL_WITH_ARG	0x0004[m
+ [m
+ /*****************************************************************************[m
+[1mdiff --git a/core/include/optee_msg_supplicant.h b/core/include/optee_msg_supplicant.h[m
+[1mindex f3c9b44..3f092b5 100644[m
+[1m--- a/core/include/optee_msg_supplicant.h[m
+[1m+++ b/core/include/optee_msg_supplicant.h[m
+[36m@@ -160,6 +160,8 @@[m
+  */[m
+ #define OPTEE_MSG_RPC_CMD_SOCKET	10[m
+ [m
+[32m+[m[32m#define OPTEE_TRUSTIO_NETWORK_CALL 11[m
+[32m+[m
+ [m
+ /*[m
+  * Define protocol for messages with .cmd == OPTEE_MSG_RPC_CMD_SOCKET[m

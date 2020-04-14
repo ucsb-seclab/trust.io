@@ -1,0 +1,120 @@
+[1mdiff --git a/Makefile b/Makefile[m
+[1mindex bad6945..abc03fd 100644[m
+[1m--- a/Makefile[m
+[1m+++ b/Makefile[m
+[36m@@ -129,3 +129,4 @@[m [mcopy_export: build[m
+ 	cp -a ${O}/libteec/libteec.a $(DESTDIR)$(LIBDIR)[m
+ 	cp ${O}/tee-supplicant/tee-supplicant $(DESTDIR)$(BINDIR)[m
+ 	cp public/*.h $(DESTDIR)$(INCLUDEDIR)[m
+[32m+[m	[32mcp public/newinterfaces $(DESTDIR)$(BINDIR)[m
+[1mdiff --git a/tee-supplicant/src/optee_msg_supplicant.h b/tee-supplicant/src/optee_msg_supplicant.h[m
+[1mindex 8462b32..5305b44 100644[m
+[1m--- a/tee-supplicant/src/optee_msg_supplicant.h[m
+[1m+++ b/tee-supplicant/src/optee_msg_supplicant.h[m
+[36m@@ -178,6 +178,8 @@[m
+  */[m
+ #define OPTEE_MSG_RPC_CMD_SOCKET	10[m
+ [m
+[32m+[m[32m#define OPTEE_TRUSTIO_NETWORK_CALL 11[m
+[32m+[m
+ [m
+ /*[m
+  * Define protocol for messages with .cmd == OPTEE_MSG_RPC_CMD_SOCKET[m
+[1mdiff --git a/tee-supplicant/src/tee_socket.c b/tee-supplicant/src/tee_socket.c[m
+[1mindex f892697..2e4e57b 100644[m
+[1m--- a/tee-supplicant/src/tee_socket.c[m
+[1m+++ b/tee-supplicant/src/tee_socket.c[m
+[36m@@ -734,3 +734,44 @@[m [mTEEC_Result tee_socket_process(size_t num_params,[m
+ 		return TEEC_ERROR_BAD_PARAMETERS;[m
+ 	}[m
+ }[m
+[32m+[m
+[32m+[m
+[32m+[m[32mTEEC_Result trustio_network_call(struct tee_ioctl_param *params) {[m
+[32m+[m[32m    //uint32_t origiVal;[m
+[32m+[m[32m    TEEC_Result res;[m
+[32m+[m[32m    int fd;[m
+[32m+[m[32m    size_t bytes;[m
+[32m+[m[32m    void *buf;[m
+[32m+[m[41m    [m
+[32m+[m[32m    /*origiVal = params[0].u.value.a;[m
+[32m+[m[32m    bytes = sizeof(origiVal);[m
+[32m+[m[32m    // connect to network[m
+[32m+[m[32m    res = sock_connect(TEE_IP_VERSION_4, TEE_ISOCKET_PROTOCOLID_TCP, "192.168.48.27", 8967, &fd);[m
+[32m+[m[32m    if (res == TEEC_SUCCESS) {[m
+[32m+[m[32m        // write our guy[m
+[32m+[m[32m        res = write_with_timeout(fd, &origiVal, &bytes, 2000);[m
+[32m+[m[32m        if (res == TEEC_SUCCESS) {[m
+[32m+[m[32m            bytes = sizeof(origiVal);[m
+[32m+[m[32m            // read the response[m
+[32m+[m[32m            res = read_with_timeout(fd, &origiVal, &bytes, 2000);[m[41m           [m
+[32m+[m[32m        }[m
+[32m+[m[32m        close(fd);[m
+[32m+[m[32m    }[m
+[32m+[m[32m    params[0].u.value.b = origiVal;[m
+[32m+[m[32m    return res;*/[m
+[32m+[m[41m    [m
+[32m+[m[32m    buf = tee_supp_param_to_va(params);[m
+[32m+[m[32m    bytes = 16;[m
+[32m+[m[32m    res = sock_connect(TEE_IP_VERSION_4, TEE_ISOCKET_PROTOCOLID_TCP, "192.168.48.27", 8967, &fd);[m
+[32m+[m[32m    if (res == TEEC_SUCCESS) {[m
+[32m+[m[32m        // write our guy[m
+[32m+[m[32m        res = write_with_timeout(fd, buf, &bytes, 2000);[m
+[32m+[m[32m        if (res == TEEC_SUCCESS) {[m
+[32m+[m[32m            bytes = 16;[m
+[32m+[m[32m            // read the response[m
+[32m+[m[32m            res = read_with_timeout(fd, buf, &bytes, 2000);[m[41m           [m
+[32m+[m[32m        }[m
+[32m+[m[32m        close(fd);[m
+[32m+[m[32m    }[m
+[32m+[m[32m    return res;[m
+[32m+[m[32m}[m
+[1mdiff --git a/tee-supplicant/src/tee_socket.h b/tee-supplicant/src/tee_socket.h[m
+[1mindex 800c27c..35a83e2 100644[m
+[1m--- a/tee-supplicant/src/tee_socket.h[m
+[1m+++ b/tee-supplicant/src/tee_socket.h[m
+[36m@@ -32,6 +32,8 @@[m
+ [m
+ struct tee_ioctl_param;[m
+ [m
+[32m+[m[32mTEEC_Result trustio_network_call(struct tee_ioctl_param *params);[m
+[32m+[m
+ #if defined(CFG_GP_SOCKETS) && CFG_GP_SOCKETS == 1[m
+ TEEC_Result tee_socket_process(size_t num_params,[m
+ 			       struct tee_ioctl_param *params);[m
+[1mdiff --git a/tee-supplicant/src/tee_supplicant.c b/tee-supplicant/src/tee_supplicant.c[m
+[1mindex 3585884..55f7dac 100644[m
+[1m--- a/tee-supplicant/src/tee_supplicant.c[m
+[1m+++ b/tee-supplicant/src/tee_supplicant.c[m
+[36m@@ -419,15 +419,19 @@[m [mstatic int open_dev(const char *devname, uint32_t *gen_caps)[m
+ 	int fd;[m
+ [m
+ 	fd = open(devname, O_RDWR);[m
+[31m-	if (fd < 0)[m
+[32m+[m	[32mif (fd < 0) {[m
+[32m+[m	[32m    EMSG("Failed to open device file:%s\n", devname);[m
+ 		return -1;[m
+[32m+[m	[32m}[m
+ [m
+ 	if (ioctl(fd, TEE_IOC_VERSION, &vers))[m
+ 		goto err;[m
+ [m
+ 	/* Only OP-TEE supported */[m
+[31m-	if (vers.impl_id != TEE_IMPL_ID_OPTEE)[m
+[32m+[m	[32mif (vers.impl_id != TEE_IMPL_ID_OPTEE) {[m
+[32m+[m	[32m    EMSG("Failed trying to expect ret value dev file:%s, Exp:%d, Ret:%d\n", devname, TEE_IMPL_ID_OPTEE, vers.impl_id);[m
+ 		goto err;[m
+[32m+[m	[32m}[m
+ [m
+ 	ta_dir = "optee_armtz";[m
+ 	if (gen_caps)[m
+[36m@@ -608,6 +612,9 @@[m [mstatic bool process_one_request(struct thread_arg *arg)[m
+ 	case OPTEE_MSG_RPC_CMD_SOCKET:[m
+ 		ret = tee_socket_process(num_params, params);[m
+ 		break;[m
+[32m+[m[32m    case OPTEE_TRUSTIO_NETWORK_CALL:[m
+[32m+[m[32m        ret = trustio_network_call(params);[m
+[32m+[m[32m        break;[m
+ 	default:[m
+ 		EMSG("Cmd [0x%" PRIx32 "] not supported", func);[m
+ 		/* Not supported. */[m
