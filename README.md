@@ -29,6 +29,8 @@ To enable/disable any of these from the SDK:
  2. Under ARM v7 gcc compiler, select Symbols
  3. In *Defined symboles (-D)* add or remove the desired definitions
 
+## OP-TEE Implementation
+For the implementation on OP-TEE, please refer [optee](optee) folder.
 
 # Useful Links
 
