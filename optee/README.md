@@ -7,6 +7,8 @@ We have tested our changes on a Hikey Board.
 
 The data flow of our implementation is as shown below:
 
+![OPTEETrustIO](https://github.com/ucsb-seclab/trust.io/raw/master/optee/pics/OPTEESetup.png)
+
 The numbers on the arrows show the order in which the messages will be exchanged between components. There are two numbers separated by `/` where the first number is for the forward direction, and the second is for the reverse.
 
 We have changed the following components of OP-TEE debian:
